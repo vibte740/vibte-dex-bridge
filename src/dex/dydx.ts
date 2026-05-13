@@ -19,6 +19,12 @@ export class DydxClient {
   async placeOrder(order: OrderRequest): Promise<OrderResult> {
     logger.info("Placing order on dYdX", { order });
     // TODO: CompositeClient.placeOrder(...)
+    // Handle limit vs market orders
+    if (order.type === "limit" && order.price !== undefined) {
+      logger.info(`Placing limit order at price ${order.price}`);
+    } else {
+      logger.info("Placing market order");
+    }
     return { success: true, orderId: `DYDX-${Date.now()}` };
   }
 

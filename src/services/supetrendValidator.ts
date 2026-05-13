@@ -19,6 +19,12 @@ export class SupertrendValidator {
       return true;
     }
 
+    // Price is required for validation
+    if (price === undefined) {
+      logger.warn("Price is required for Supertrend validation");
+      return false;
+    }
+
     if (side === "buy" && sl >= price) {
       logger.warn("BUY signal rejected: stop-loss is above entry price", { price, sl });
       return false;

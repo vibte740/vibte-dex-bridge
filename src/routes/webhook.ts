@@ -20,6 +20,7 @@ router.post(
       symbol: payload.symbol,
       side: payload.side,
       price: payload.price,
+      orderType: payload.orderType,
     });
 
     try {

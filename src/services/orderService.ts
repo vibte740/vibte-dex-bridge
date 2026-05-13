@@ -1,4 +1,4 @@
-import type { WebhookPayload, OrderResult } from "../types/webhook.js";
+import type { WebhookPayload, OrderResult, OrderType } from "../types/webhook.js";
 import { config } from "../utils/config.js";
 import { logger } from "../utils/logger.js";
 import { PositionSizer } from "./positionSizer.js";
@@ -35,29 +35,42 @@ export class OrderService {
     // 3 — Fetch live account equity
     const equity = await this.dexClient.getAccountEquity();
 
-    // 4 — Calculate position size
-    const { notionalUSD, leverage } = sizer.calculate({
+    // 4 — Calculate position size (price is required for calculation)
+    if (payload.price === undefined) {
+      return { success: false, error: "Price is required for position sizing" };
+    }
+
+    const sizerResult = sizer.calculate({
       accountEquityUSD: equity,
       entryPrice: payload.price,
       stopLossPrice: payload.sl,
       leverage: payload.leverage,
     });
 
-    // 5 — Place order
-    const result = await this.dexClient.placeOrder({
+    // 5 — Determine order type (market or limit)
+    const orderType: OrderType = payload.orderType ?? "market";
+    
+    // For limit orders, use the price from webhook as the limit price
+    // For market orders, we don't specify a price (executed at market price)
+    const placeOrderParams = {
       symbol: payload.symbol,
       side: payload.side,
-      type: "market",
-      size: notionalUSD,
+      type: orderType,
+      size: sizerResult.notionalUSD,
       stopLoss: payload.sl,
       takeProfit: payload.tp,
-      leverage,
-    });
+      leverage: sizerResult.leverage,
+      ...(orderType === "limit" && { price: payload.price }), // Add price only for limit orders
+    };
+
+    // 6 — Place order
+    const result = await this.dexClient.placeOrder(placeOrderParams);
 
     logger.info("Order processed", {
       symbol: payload.symbol,
       side: payload.side,
-      notionalUSD,
+      orderType,
+      notionalUSD: sizerResult.notionalUSD,
       result,
     });
 

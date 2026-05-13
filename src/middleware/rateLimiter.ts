@@ -19,7 +19,7 @@ export const webhookRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: new RedisStore({
-    sendCommand: (...args: string[]) => redisClient.call(...args) as Promise<number>,
+    sendCommand: (command: string, ...args: any[]) => redisClient.call(command, ...args) as Promise<number>,
   }),
   handler: (_req, res) => {
     logger.warn("Rate limit exceeded on /webhook");

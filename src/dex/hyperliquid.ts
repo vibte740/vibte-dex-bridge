@@ -1,5 +1,4 @@
 import type { OrderRequest, OrderResult } from "../types/webhook.js";
-import { config } from "../utils/config.js";
 import { logger } from "../utils/logger.js";
 
 /**
@@ -30,6 +29,12 @@ export class HyperliquidClient {
   async placeOrder(order: OrderRequest): Promise<OrderResult> {
     logger.info("Placing order on Hyperliquid", { order });
     // TODO: build + sign L1 action payload and POST to /exchange
+    // Handle limit vs market orders
+    if (order.type === "limit" && order.price !== undefined) {
+      logger.info(`Placing limit order at price ${order.price}`);
+    } else {
+      logger.info("Placing market order");
+    }
     return {
       success: true,
       orderId: `HL-${Date.now()}`,
