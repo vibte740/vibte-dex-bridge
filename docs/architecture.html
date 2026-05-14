@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibte DEX Bridge v2.0 - Technical Architecture</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+        }
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: 280px;
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        .sidebar h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #34495e;
+            padding-bottom: 10px;
+        }
+        .sidebar nav ul {
+            list-style: none;
+        }
+        .sidebar nav ul li {
+            margin: 15px 0;
+        }
+        .sidebar nav ul li a {
+            color: #ecf0f1;
+            text-decoration: none;
+            display: block;
+            padding: 10px;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .sidebar nav ul li a:hover,
+        .sidebar nav ul li a.active {
+            background-color: #34495e;
+        }
+        .main-content {
+            flex: 1;
+            margin-left: 280px;
+            padding: 30px;
+            background-color: white;
+        }
+        .main-content h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        .main-content h2 {
+            color: #34495e;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        .main-content h3 {
+            color: #2c3e50;
+            margin-top: 25px;
+            margin-bottom: 10px;
+        }
+        .main-content p {
+            margin-bottom: 15px;
+        }
+        .main-content ul {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+        .main-content li {
+            margin-bottom: 8px;
+        }
+        .toc {
+            background-color: #ecf0f1;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        .toc h3 {
+            margin-top: 0;
+        }
+        .toc ul {
+            list-style: none;
+        }
+        .toc li {
+            margin: 10px 0;
+        }
+        .toc a {
+            color: #2980b9;
+            text-decoration: none;
+        }
+        .toc a:hover {
+            text-decoration: underline;
+        }
+        .component-diagram {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            overflow-x: auto;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .badge-success {
+            background-color: #2ecc71;
+            color: white;
+        }
+        .badge-warning {
+            background-color: #f39c12;
+            color: white;
+        }
+        .badge-info {
+            background-color: #3498db;
+            color: white;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+            }
+            .main-content {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <h2>Vibte DEX Bridge</h2>
+            <nav>
+                <ul>
+                    <li><a href="#overview" class="active">Overview</a></li>
+                    <li><a href="#topology">Network Topology</a></li>
+                    <li><a href="#anatomy">Component Anatomy</a></li>
+                    <li><a href="#dataflow">Data Flow</a></li>
+                    <li><a href="#modules">Module Details</a></li>
+                    <li><a href="#security">Security Considerations</a></li>
+                    <li><a href="#deployment">Deployment Architecture</a></li>
+                </ul>
+            </nav>
+        </aside>
+        <main class="main-content">
+            <header>
+                <h1>Vibte DEX Bridge v2.0 Technical Architecture</h1>
+                <p><em>Automated bridge that executes TradingView Supertrend v6 signals on DEXs (Hyperliquid / dYdX)</em></p>
+            </header>
+
+            <section class="toc">
+                <h3>Table of Contents</h3>
+                <ul>
+                    <li><a href="#overview">1. Overview</a></li>
+                    <li><a href="#topology">2. Network Topology</a></li>
+                    <li><a href="#anatomy">3. Component Anatomy</a></li>
+                    <li><a href="#dataflow">4. Data Flow</a></li>
+                    <li><a href="#modules">5. Module Details</a></li>
+                    <li><a href="#security">6. Security Considerations</a></li>
+                    <li><a href="#deployment">7. Deployment Architecture</a></li>
+                </ul>
+            </section>
+
+            <section id="overview">
+                <h2>1. Overview</h2>
+                <p>The Vibte DEX Bridge is a TypeScript-based automated trading system designed to execute TradingView Supertrend v6 signals on decentralized exchanges (DEXs). The system acts as a middleware between TradingView webhooks and DEX APIs, translating trading signals into executable orders on Hyperliquid and dYdX v4.</p>
+                <p>Built with modern web technologies, the bridge prioritizes security, reliability, and extensibility. The architecture follows a modular, layered approach that separates concerns between webhook handling, validation, risk management, and exchange execution.</p>
+            </section>
+
+            <section id="topology">
+                <h2>2. Network Topology</h2>
+                <div class="component-diagram">
+                    <h3>High-Level System Architecture</h3>
+                    <p>The system operates as a standalone service that communicates with three primary external entities:</p>
+                    <ul>
+                        <li><strong>TradingView</strong>: Sends HTTP POST requests containing trading signals to the bridge's webhook endpoint</li>
+                        <li><strong>DEX APIs</strong>: Hyperliquid and dYdX v4 REST/WebSocket endpoints for market data and order execution</li>
+                        <li><strong>External Services</strong>: Optional Redis for rate limiting, logging systems</li>
+                    </ul>
+                </div>
+
+                <div class="component-diagram">
+                    <h3>Internal Component Topology</h3>
+                    <p>Internally, the bridge follows a request-processing pipeline topology:</p>
+                    <ol>
+                        <li>Entry Point (<code>index.ts</code>) initializes the Express server and sets up graceful shutdown handling</li>
+                        <li>Express Application (<code>server.ts</code>) configures middleware and routes</li>
+                        <li>Webhook Route (<code>routes/webhook.ts</code>) receives and validates incoming TradingView signals</li>
+                        <li>Middleware Layer processes requests through validation and rate limiting</li>
+                        <li>Service Layer orchestrates signal validation, position sizing, and order execution</li>
+                        <li>DEX Client Layer interacts with exchange-specific APIs</li>
+                        <li>Utility Layer provides cross-cutting concerns (configuration, logging)</li>
+                    </ol>
+                </div>
+            </section>
+
+            <section id="anatomy">
+                <h2>3. Component Anatomy</h2>
+                <p>The system is organized into distinct layers, each with a specific responsibility:</p>
+
+                <div class="component-diagram">
+                    <h3>Layered Architecture</h3>
+                    <ul>
+                        <li><strong>Presentation Layer</strong>: Express server and routing (<code>server.ts</code>, <code>routes/</code>)</li>
+                        <li><strong>Middleware Layer</strong>: Request preprocessing (<code>middleware/</code>)</li>
+                        <li><strong>Service Layer</strong>: Business logic orchestration (<code>services/</code>)</li>
+                        <li><strong>Integration Layer</strong>: DEX-specific implementations (<code>dex/</code>)</li>
+                        <li><strong>Utility Layer</strong>: Cross-cutting concerns (<code>utils/</code>)</li>
+                        <li><strong>Type Layer</strong>: Shared interfaces and schemas (<code>types/</code>)</li>
+                    </ul>
+                </div>
+
+                <section>
+                    <h3>Core Components</h3>
+                    <div class="component-diagram">
+                        <h4>Entry Point (<code>src/index.ts</code>)</h4>
+                        <p>Responsible for application bootstrap and lifecycle management:</p>
+                        <ul>
+                            <li>Creates Express application instance</li>
+                            <li>Loads configuration and logger</li>
+                            <li>Starts HTTP server on configured port</li>
+                            <li>Implements graceful shutdown handling for SIGTERM, SIGINT, and uncaught exceptions</li>
+                        </ul>
+                    </div>
+
+                    <div class="component-diagram">
+                        <h4>Express Application Factory (<code>src/server.ts</code>)</h4>
+                        <p>Configures the Express middleware stack and routes:</p>
+                        <ul>
+                            <li>Sets up JSON body parsing</li>
+                            <li>Registers global middleware (rate limiting, validation)</li>
+                            <li>Defines API routes (<code>/api/webhook</code>)</li>
+                            <li>Configures error handling middleware</li>
+                        </ul>
+                    </div>
+
+                    <div class="component-diagram">
+                        <h4>Webhook Handler (<code>src/routes/webhook.ts</code>)</h4>
+                        <p>Processes incoming TradingView signals:</p>
+                        <ul>
+                            <li>Validates webhook secret for authenticity</li>
+                            <li>Parses and validates TradingView payload structure</li>
+                            <li>Delegates validated signals to the order service</li>
+                            <li>Returns appropriate HTTP responses (200 for success, 400/401/429 for errors)</li>
+                        </ul>
+                    </div>
+
+                    <div class="component-diagram">
+                        <h4>Middleware Components</h4>
+                        <div class="component-diagram">
+                            <h5>Request Validation (<code>src/middleware/validateWebhook.ts</code>)</h5>
+                            <p>Performs multi-layer validation of incoming webhooks:</p>
+                            <ul>
+                                <li>Verifies HMAC signature or shared secret</li>
+                                <li>Validates payload against Zod schema</li>
+                                <li>Checks symbol whitelist and side values</li>
+                                <li>Ensures required fields are present and correctly typed</li>
+                            </ul>
+                        </div>
+
+                        <div class="component-diagram">
+                            <h5>Rate Limiting (<code>src/middleware/rateLimiter.ts</code>)</h5>
+                            <p>Protects against abuse using Redis-backed sliding window:</p>
+                            <ul>
+                                <li>Limits requests per IP address</li>
+                                <li>Configurable window size and request count</li>
+                                <li>Falls back to in-memory storage when Redis unavailable</li>
+                                <li>Returns 429 Too Many Requests when limit exceeded</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="component-diagram">
+                        <h4>Service Layer</h4>
+                        <div class="component-diagram">
+                            <h5>Order Service (<code>src/services/orderService.ts</code>)</h5>
+                            <p>Orchestrates the complete order execution pipeline:</p>
+                            <ul>
+                                <li>Receives validated trading signals</li>
+                                <li>Delegates signal integrity checks to Supertrend validator</li>
+                                <li>Calculates position size using the position sizer</li>
+                                <li>Routes execution to appropriate DEX client</li>
+                                <li>Handles execution results and error propagation</li>
+                            </ul>
+                        </div>
+
+                        <div class="component-diagram">
+                            <h5>Supertrend Validator (<code>src/services/supetrendValidator.ts</code>)</h5>
+                            <p>Ensures signal integrity and prevents stale/executed signals:</p>
+                            <ul>
+                                <li>Validates signal timing and sequence</li>
+                                <li>Checks for duplicate signal processing</li>
+                                <li>Verifies price levels against current market (optional)</li>
+                                <li>Ensures SL/TP logic consistency</li>
+                            </ul>
+                        </div>
+
+                        <div class="component-diagram">
+                            <h5>Position Sizer (<code>src/services/positionSizer.ts</code>)</h5>
+                            <p>Calculates appropriate position sizes based on risk parameters:</p>
+                            <ul>
+                                <li>Implements fixed-fractional position sizing</li>
+                                <li>Considers account equity, risk percentage, and stop loss distance</li>
+                                <li>Applies leverage and exchange-specific constraints</li>
+                                <li>Rounds to exchange-acceptable precision</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="component-diagram">
+                        <h4>DEX Client Layer</h4>
+                        <div class="component-diagram">
+                            <h5>Hyperliquid Client (<code>src/dex/hyperliquid.ts</code>)</h5>
+                            <p>Handles communication with Hyperliquid exchange:</p>
+                            <ul>
+                                <li>Manages API authentication and request signing</li>
+                                <li>Implements order placement, cancellation, and status checking</li>
+                                <li>Handles WebSocket connections for real-time data (optional)</li>
+                                <li>Error handling specific to Hyperliquid API responses</li>
+                            </ul>
+                        </div>
+
+                        <div class="component-diagram">
+                            <h5>dYdX v4 Client (<code>src/dex/dydx.ts</code>)</h5>
+                            <p>Handles communication with dYdX v4 exchange:</p>
+                            <ul>
+                                <li>Utilizes @dydxprotocol/v4-client-js for signed requests</li>
+                                <li>Manages Ethereum wallet integration for authentication</li>
+                                <li>Implements order placement via CompositeClient</li>
+                                <li>Handles sub-account management and positioning</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="component-diagram">
+                        <h4>Utility Layer</h4>
+                        <div class="component-diagram">
+                            <h5>Configuration (<code>src/utils/config.ts</code>)</h5>
+                            <p>Centralized environment configuration management:</p>
+                            <ul>
+                                <li>Loads and validates environment variables</li>
+                                <li>Provides typed access to configuration values</li>
+                                <li>Supports different environments (development, production)</li>
+                                <li>Includes sensible defaults where appropriate</li>
+                            </ul>
+                        </div>
+
+                        <div class="component-diagram">
+                            <h5>Logging (<code>src/utils/logger.ts</code>)</h5>
+                            <p>Structured logging with Winston:</p>
+                            <ul>
+                                <li>Configurable log levels and transports</li>
+                                <li>JSON-formatted logs for production, readable for development</li>
+                                <li>Contextual logging with metadata</li>
+                                <li>Error stack trace preservation</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+            </section>
+
+            <section id="dataflow">
+                <h2>4. Data Flow</h2>
+                <p>The system processes TradingView signals through a well-defined pipeline:</p>
+
+                <div class="component-diagram">
+                    <h3>Signal Processing Pipeline</h3>
+                    <ol>
+                        <li><strong>Ingress</strong>: TradingView sends HTTPS POST to <code>/api/webhook</code></li>
+                        <li><strong>Middleware Processing</strong>:
+                            <ul>
+                                <li>Rate limiting middleware checks request frequency</li>
+                                <li>Validation middleware authenticates and validates payload</li>
+                            </ul>
+                        </li>
+                        <li><strong>Route Handling</strong>: Webhook controller receives validated signal data</li>
+                        <li><strong>Service Orchestration</strong>:
+                            <ul>
+                                <li>Order service validates signal integrity</li>
+                                <li>Position sizer calculates trade size</li>
+                                <li>DEX client prepares exchange-specific order</li>
+                            </ul>
+                        </li>
+                        <li><strong>Exchange Communication</strong>: Signed order transmitted to DEX API</li>
+                        <li><strong>Response Handling</strong>: Exchange response processed and result returned</li>
+                        <li><strong>Egress</strong>: HTTP response sent back to TradingView (success/error)</li>
+                    </ol>
+                </div>
+
+                <div class="component-diagram">
+                    <h3>Data Structures</h3>
+                    <p>Key data structures flow through the system:</p>
+                    <ul>
+                        <li><strong>TradingView Payload</strong>: { secret, side, symbol, price, sl, tp, leverage }</li>
+                        <li><strong>Validated Signal</strong>: Typed object with all fields verified</li>
+                        <li><strong>Order Request</strong>: Exchange-specific parameters (size, price, type, etc.)</li>
+                        <li><strong>Exchange Response</strong>: Order ID, status, fees, and timestamps</li>
+                        <li><strong>Internal State</strong>: Configuration, rate limit counters, signal history</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section id="modules">
+                <h2>5. Module Details</h2>
+                <p>Each module in the system has a clearly defined responsibility:</p>
+
+                <section>
+                    <h3>Configuration Module (<code>utils/config.ts</code>)</h3>
+                    <p>Responsible for managing application configuration:</p>
+                    <ul>
+                        <li>Loads environment variables from <code>.env</code> or process environment</li>
+                        <li>Provides type-safe accessors for all configuration values</li>
+                        <li>Includes validation for critical settings (ports, secrets, API keys)</li>
+                        <li>Supports environment-specific overrides</li>
+                        <li>Exports singleton configuration instance</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Logging Module (<code>utils/logger.ts</code>)</h3>
+                    <p>Provides centralized logging capabilities:</p>
+                    <ul>
+                        <li>Winston logger with multiple transports (console, file)</li>
+                        <li>Different formatting for development (pretty-print) vs production (JSON)</li>
+                        <li>Configurable log levels per environment</li>
+                        <li>Metadata enrichment for request tracing</li>
+                        <li>Error logging with stack trace preservation</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Webhook Validation Module (<code>middleware/validateWebhook.ts</code>)</h3>
+                    <p>Ensures only legitimate TradingView signals are processed:</p>
+                    <ul>
+                        <li>Verifies shared secret or HMAC signature</li>
+                        <li>Validates payload structure using Zod schema</li>
+                        <li>Checks symbol against whitelist (BTC, ETH, etc.)</li>
+                        <li>Validates side values (buy, sell, close)</li>
+                        <li>Ensures numeric values are within reasonable bounds</li>
+                        <li>Returns detailed validation errors for debugging</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Rate Limiting Module (<code>middleware/rateLimiter.ts</code>)</h3>
+                    <p>Protects the service from abuse and overload:</p>
+                    <ul>
+                        <li>Implements sliding window algorithm using Redis</li>
+                        <li>Falls back to in-memory store when Redis unavailable</li>
+                        <li>Tracks requests per IP address</li>
+                        <li>Configurable limits (default: 10 requests/minute)</li>
+                        <li>Returns HTTP 429 with retry-after header when limit exceeded</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Order Service Module (<code>services/orderService.ts</code>)</h3>
+                    <p>Orchestrates the complete trading workflow:</p>
+                    <ul>
+                        <li>Receives validated signal from webhook handler</li>
+                        <li>Calls Supertrend validator to check signal integrity</li>
+                        <li>Delegates position calculation to position sizer</li>
+                        <li>Selects appropriate DEX client based on configuration</li>
+                        <li>Formats exchange-specific order parameters</li>
+                        <li>Handles execution results and error conversion</li>
+                        <li>Logs all significant events for audit trail</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Supertrend Validator Module (<code>services/supetrendValidator.ts</code>)</h3>
+                    <p>Validates the quality and integrity of trading signals:</p>
+                    <ul>
+                        <li>Prevents processing of duplicate signals</li>
+                        <li>Checks signal timing (stale signal detection)</li>
+                        <li>Validates price relationships (entry < TP for longs, etc.)</li>
+                        <li>Ensures stop loss is on correct side of entry</li>
+                        <li>Can optionally verify signal against current market price</li>
+                        <li>Maintains signal history for deduplication</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Position Sizer Module (<code>services/positionSizer.ts</code>)</h3>
+                    <p>Calculates appropriate trade sizes based on risk management:</p>
+                    <ul>
+                        <li>Implements fixed-fractional position sizing algorithm</li>
+                        <li>Risk calculation: position size = (equity × risk%) / |entry - stop loss|</li>
+                        <li>Applies leverage multiplier to calculated size</li>
+                        <li>Respects exchange minimum order sizes and precision requirements</li>
+                        <li>Returns size in base currency (e.g., BTC amount)</li>
+                        <li>Logs risk parameters for audit purposes</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>DEX Clients (<code>dex/</code>)</h3>
+                    <p>Exchange-specific implementations for order execution:</p>
+                    <div class="component-diagram">
+                        <h4>Hyperliquid Client</h4>
+                        <ul>
+                            <li>Uses REST API with timestamp-based authentication</li>
+                            <li>Implements POST /order endpoint for market and limit orders</li>
+                            <li>Handles response parsing for order IDs and status</li>
+                            <li>Error handling for insufficient funds, invalid prices, etc.</li>
+                            <li>Optional WebSocket integration for real-time data</li>
+                        </ul>
+                    </div>
+                    <div class="component-diagram">
+                        <h4>dYdX v4 Client</h4>
+                        <ul>
+                            <li>Leverages @dydxprotocol/v4-client-js library</li>
+                            <li>Requires Ethereum wallet for API key signing</li>
+                            <li>Uses CompositeClient.placeOrder for order submission</li>
+                            <li>Supports both market and limit order types</li>
+                            <li>Handles sub-account specification for positioning</li>
+                            <li>Manages API credential lifecycle</li>
+                        </ul>
+                    </div>
+                </section>
+            </section>
+
+            <section id="security">
+                <h2>6. Security Considerations</h2>
+                <p>The bridge implements multiple layers of security to protect against unauthorized access and misuse:</p>
+
+                <section>
+                    <h3>Authentication and Authorization</h3>
+                    <ul>
+                        <li><strong>Webhook Secret Validation</strong>: All incoming requests must contain a valid secret matching WEBHOOK_SECRET</li>
+                        <li><strong>Environment Isolation</strong>: Sensitive credentials (API keys, private keys) stored in environment variables</li>
+                        <li><strong>Principle of Least Privilege</strong>: DEX API keys limited to trading permissions only</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Input Validation and Sanitization</h3>
+                    <ul>
+                        <li><strong>Schema Validation</strong>: Zod schema validates all incoming webhook payloads</li>
+                        <li><strong>Type Safety</strong>: TypeScript ensures data integrity throughout processing</li>
+                        <li><strong>Range Checking</strong>: Numerical values validated against reasonable bounds</li>
+                        <li><strong>Symbol Whitelisting</strong>: Only pre-approved trading symbols accepted</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Rate Limiting and Abuse Prevention</h3>
+                    <ul>
+                        <li><strong>Per-IP Rate Limiting</strong>: Prevents brute force and flooding attacks</li>
+                        <li><strong>Sliding Window Algorithm</strong>: Provides smooth rate limiting behavior</li>
+                        <li><strong>Redis Backend</strong>: Distributed rate limiting for horizontal scaling</li>
+                        <li><strong>Fallback Mechanism</strong>: In-memory limiting ensures protection even when Redis unavailable</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Secure Communications</h3>
+                    <ul>
+                        <li><strong>HTTPS Enforcement</strong>: All external communications use TLS</li>
+                        <li><strong>API Key Protection</strong>: Exchange credentials never logged or exposed</li>
+                        <li><strong>Secret Management</strong>: Recommendation to use Docker secrets or vault in production</li>
+                        <li><strong>Network Segmentation</strong>: Suggestion to run behind reverse proxy with TLS termination</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Error Handling and Information Disclosure</h3>
+                    <ul>
+                        <li><strong>Generic Error Messages</strong>: Production errors return minimal information to users</li>
+                        <li><strong>Detailed Internal Logging</strong>: Full error details preserved in logs for debugging</li>
+                        <li><strong>Exception Handling</strong>: Global error handlers prevent stack trace leakage</li>
+                        <li><strong>Graceful Degradation</strong>: Service continues operating despite non-critical failures</li>
+                    </ul>
+                </section>
+            </section>
+
+            <section id="deployment">
+                <h2>7. Deployment Architecture</h2>
+                <p>The bridge is designed for flexible deployment across various environments:</p>
+
+                <section>
+                    <h3>Containerized Deployment (Docker)</h3>
+                    <p>Recommended production deployment using Docker Compose:</p>
+                    <div class="code-block">
+                        docker-compose.yml contents:
+<code>
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - DEFAULT_DEX=hyperliquid
+      - REDIS_URL=redis://redis:6379
+    restart: unless-stopped
+    
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+</code>
+                    </div>
+                    <ul>
+                        <li>Multi-stage Docker build for minimal production image</li>
+                        <li>Separate Redis service for rate limiting persistence</li>
+                        <li>Environment-specific configuration via .env file</li>
+                        <li>Health checks and restart policies for resilience</li>
+                        <li>Non-root user execution for enhanced security</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Process Management</h3>
+                    <p>Production process management considerations:</p>
+                    <ul>
+                        <li>Node.js cluster mode for multi-core utilization (optional)</li>
+                        <li>PM2 or systemd for process supervision</li>
+                        <li>Log rotation and retention policies</li>
+                        <li>Monitoring and alerting for key metrics (request rate, error rate, latency)</li>
+                        <li>Backup and recovery procedures for configuration</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Scaling Considerations</h3>
+                    <p>Architectural elements that support horizontal scaling:</p>
+                    <ul>
+                        <li>Stateless request processing enables load balancing</li>
+                        <li>Externalized state (Redis) for rate limiting across instances</li>
+                        <li>Configuration via environment variables supports multiple deployments</li>
+                        <li>No affinity requirements - any instance can handle any request</li>
+                        <li>Database-independent design facilitates easy replication</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>Development vs Production Differences</h3>
+                    <ul>
+                        <li><strong>Development</strong>: Hot reloading, verbose logging, no rate limiting by default</li>
+                        <li><strong>Production</strong>: Optimized builds, minimal logging, strict rate limiting, error privacy</li>
+                        <li><strong>Configuration</strong>: Environment-specific .env files or secret management</li>
+                        <li><strong>Monitoring</strong>: Production includes metrics collection and health checks</li>
+                    </ul>
+                </section>
+            </section>
+
+            <footer class="footer">
+                <p>Vibte DEX Bridge v2.0 Technical Documentation</p>
+                <p>Generated on {{date}}</p>
+                <p>&copy; 2026 Vibte Trading Systems. All rights reserved.</p>
+            </footer>
+        </main>
+    </div>
+    <script>
+        // Active sidebar highlighting based on scroll position
+        document.addEventListener('DOMContentLoaded', function() {
+            const sections = document.querySelectorAll('section[id]');
+            const navLinks = document.querySelectorAll('.sidebar nav ul li a');
+            
+            window.addEventListener('scroll', function() {
+                let current = '';
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop;
+                    const sectionHeight = section.clientHeight;
+                    if (pageYOffset >= sectionTop - 60) {
+                        current = section.getAttribute('id');
+                    }
+                });
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    if (link.getAttribute('href').substring(1) === current) {
+                        link.classList.add('active');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

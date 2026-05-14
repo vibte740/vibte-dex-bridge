@@ -1,0 +1,94 @@
+//@version=5
+strategy("WaveTrend + Williams Vix Fix Strategy", overlay=true, margin_long=100, margin_short=100, default_qty_type=strategy.percent_of_equity, default_qty_value=10, calc_on_order_fills=true)
+
+// === INPUTS ===
+// WaveTrend
+n1 = input.int(10, "WT Channel Length", group="WaveTrend")
+n2 = input.int(21, "WT Average Length", group="WaveTrend")
+obLevel1 = input.float(60, "WT Over Bought Level 1", group="WaveTrend")
+obLevel2 = input.float(53, "WT Over Bought Level 2", group="WaveTrend")
+osLevel1 = input.float(-60, "WT Over Sold Level 1", group="WaveTrend")
+osLevel2 = input.float(-53, "WT Over Sold Level 2", group="WaveTrend")
+
+// Williams Vix Fix
+vixLen = input.int(22, "Vix Fix Length", group="Williams Vix Fix")
+vixThreshold = input.float(80.0, "Vix Fix Spike Threshold", group="Williams Vix Fix")
+
+// Risk Management
+atrLen = input.int(14, "ATR Length", group="Risk Management")
+atrMult = input.float(1.5, "ATR Multiplier for SL", group="Risk Management")
+rrRatio = input.float(2.0, "Target Risk-to-Reward Ratio", group="Risk Management", step=0.1)
+
+// === INDICATOR CALCULATIONS ===
+// WaveTrend [LazyBear]
+ap = hlc3
+esa = ta.ema(ap, n1)
+d = ta.ema(math.abs(ap - esa), n1)
+ci = d == 0 ? 0 : (ap - esa) / (0.015 * d)
+tci = ta.ema(ci, n2)
+wt1 = tci
+wt2 = ta.sma(wt1, 4)
+
+// Williams Vix Fix
+highestHigh = ta.highest(high, vixLen)
+lowestLow = ta.lowest(low, vixLen)
+vixFix = (highestHigh - low) / (highestHigh - lowestLow) * 100
+vixFixSpike = vixFix > vixThreshold
+
+// ATR for dynamic stop loss
+atr = ta.atr(atrLen)
+
+// === SIGNAL LOGIC ===
+// WaveTrend crossovers
+bullishCross = ta.crossover(wt1, wt2)
+bearishCross = ta.crossunder(wt1, wt2)
+
+// Long condition: Vix Fix spike (extreme fear) AND bullish WT crossover in oversold
+longCondition = bullishCross and (wt1 < osLevel1) and vixFixSpike
+
+// Short condition: Bearish WT crossover in overbought AND NOT in Vix Fix extreme spike (to avoid shorting panic bottoms)
+shortCondition = bearishCross and (wt1 > obLevel1) and not vixFixSpike
+
+// === ORDER EXECUTION ===
+var float entryPrice = na
+var float stopLoss = na
+var float takeProfit = na
+
+if (longCondition)
+    entryPrice := close
+    stopLoss := entryPrice - atrMult * atr
+    takeProfit := entryPrice + rrRatio * (entryPrice - stopLoss) // RR: reward = rr * risk
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", from_entry="Long", stop=stopLoss, limit=takeProfit)
+
+if (shortCondition)
+    entryPrice := close
+    stopLoss := entryPrice + atrMult * atr
+    takeProfit := entryPrice - rrRatio * (stopLoss - entryPrice) // RR: reward = rr * risk
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", from_entry="Short", stop=stopLoss, limit=takeProfit)
+
+// === PLOTS ===
+// WaveTrend (separate pane)
+wtPlot = plot(wt1, title="WT1", color=color.green, display=display.none)
+plot(wt2, title="WT2", color=color.red, display=display.none)
+h0 = hline(0, "Zero Line", color=color.gray, linestyle=hline.style_dotted)
+hOb1 = hline(obLevel1, "OB Level 1", color=color.red, linestyle=hline.style_dotted)
+hOs1 = hline(osLevel1, "OS Level 1", color=color.green, linestyle=hline.style_dotted)
+hOb2 = hline(obLevel2, "OB Level 2", color=color.red, linestyle=hline.style_dotted, linewidth=1)
+hOs2 = hline(osLevel2, "OS Level 2", color=color.green, linestyle=hline.style_dotted, linewidth=1)
+
+// Williams Vix Fix (separate pane)
+vixPlot = plot(vixFix, title="Williams Vix Fix", color=color.blue, display=display.none)
+hVix = hline(vixThreshold, "Vix Threshold", color=color.orange, linestyle=hline.style_dotted)
+
+// Background color for Vix Fix spike
+bgcolor(vixFixSpike ? color.new(color.red, 90) : na, title="Vix Fix Spike Background")
+
+// Plot shapes for entries
+plotshape(longCondition, title="Long Entry", location=location.belowbar, color=color.green, style=shape.labelup, text="L", size=size.tiny)
+plotshape(shortCondition, title="Short Entry", location=location.abovebar, color=color.red, style=shape.labeldown, text="S", size=size.tiny)
+
+// === ALERTS ===
+alertcondition(longCondition, title="Long Signal Alert", message="{{strategy.order.alert_message}}")
+alertcondition(shortCondition, title="Short Signal Alert", message="{{strategy.order.alert_message}}")
