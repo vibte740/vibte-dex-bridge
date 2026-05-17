@@ -1,0 +1,175 @@
+//@version=6
+strategy(
+     title             = "Supertrend Strategy v6 [Webhook + SL]",
+     overlay           = true,
+     format            = format.price,
+     precision         = 2,
+     initial_capital   = 10000,
+     default_qty_type  = strategy.percent_of_equity,
+     default_qty_value = 10,
+     commission_type   = strategy.commission.percent,
+     commission_value  = 0.05
+     )
+
+// ─── INPUTS ───────────────────────────────────────────────────────────────────
+atrPeriod    = input.int   (10,   title = "ATR Period",          minval = 1)
+src          = input.source(hl2,  title = "Source")
+multiplier   = input.float (3.0,  title = "ATR Multiplier",      step = 0.1, minval = 0.1)
+useRmaATR    = input.bool  (true, title = "Use RMA ATR (vs SMA ATR)")
+showSignals  = input.bool  (true, title = "Show Buy/Sell Signals")
+highlighting = input.bool  (true, title = "Highlighter On/Off")
+
+slMulti      = input.float (1.5,  title = "SL ATR Multiplier",   step = 0.1, minval = 0.1,
+                 tooltip = "Stop loss = entry ± (ATR × this value)")
+riskPct      = input.float (1.0,  title = "Risk % Per Trade",    step = 0.1, minval = 0.1,
+                 tooltip = "Max % of account equity risked per trade")
+
+// ─── SUPERTREND CALCULATION ───────────────────────────────────────────────────
+atrVal = useRmaATR ? ta.atr(atrPeriod) : ta.sma(ta.tr, atrPeriod)
+
+basicUp = src - multiplier * atrVal
+basicDn = src + multiplier * atrVal
+
+var float finalUp = na
+var float finalDn = na
+var int   trend   = 1
+
+finalUp := na(finalUp[1]) ? basicUp :
+           close[1] > finalUp[1] ? math.max(basicUp, finalUp[1]) : basicUp
+
+finalDn := na(finalDn[1]) ? basicDn :
+           close[1] < finalDn[1] ? math.min(basicDn, finalDn[1]) : basicDn
+
+trend := na(trend[1]) ? 1 :
+         trend[1] == -1 and close > finalDn[1] ?  1 :
+         trend[1] ==  1 and close < finalUp[1] ? -1 : trend[1]
+
+// ─── SIGNALS ─────────────────────────────────────────────────────────────────
+buySignal  = trend ==  1 and trend[1] == -1
+sellSignal = trend == -1 and trend[1] ==  1
+
+// ─── STOP LOSS LEVELS (ATR-based) ────────────────────────────────────────────
+longSL  = close - slMulti * atrVal   // placed below entry for longs
+shortSL = close + slMulti * atrVal   // placed above entry for shorts
+
+// ─── POSITION SIZING (risk-based) ────────────────────────────────────────────
+calcQty(slPrice) =>
+    slDist = math.abs(close - slPrice)
+    slDist > 0 ? (strategy.equity * riskPct / 100) / slDist : na
+
+// ─── ALERT MESSAGE FUNCTION ───────────────────────────────────────────────────
+getAlertMessage(_eventType) =>
+    _sym = "{{ticker}}"
+    _price = "{{close}}"
+    _time = "{{time}}"
+    if _eventType == "buy"
+        _sl = str.tostring(longSL, format.mintick)
+        _comment = "ST_Buy"
+        '{"side":"buy","symbol":"' + _sym + '","price":"' + _price + '","sl":' + _sl + ',"comment":"' + _comment + '","time":"' + _time + '"}'
+    else if _eventType == "sell"
+        _sl = str.tostring(shortSL, format.mintick)
+        _comment = "ST_Sell"
+        '{"side":"sell","symbol":"' + _sym + '","price":"' + _price + '","sl":' + _sl + ',"comment":"' + _comment + '","time":"' + _time + '"}'
+    else // close
+        _comment = "ST_Close"
+        '{"side":"close","symbol":"' + _sym + '","price":"' + _price + '","sl":null,"comment":"' + _comment + '","time":"' + _time + '"}'
+
+// ─── STRATEGY ENTRIES / EXITS + ALERTS ───────────────────────────────────────
+// FIX: alertcondition() does NOT work inside strategy() scripts.
+//      Use alert() calls placed directly inside entry/exit blocks instead.
+
+if buySignal
+    qty = calcQty(longSL)
+    if not na(qty)
+        strategy.close("Short", comment = "ST Close Short")
+        strategy.entry("Long",  strategy.long,  qty = qty, comment = "ST Buy")
+        strategy.exit ("Long SL", from_entry = "Long",
+             stop    = longSL,
+             comment = "Long SL Hit")
+        // Webhook alert fires once per bar close on confirmed buy signal
+        alert(getAlertMessage("buy"), alert.freq_once_per_bar_close)
+
+if sellSignal
+    qty = calcQty(shortSL)
+    if not na(qty)
+        strategy.close("Long",  comment = "ST Close Long")
+        strategy.entry("Short", strategy.short, qty = qty, comment = "ST Sell")
+        strategy.exit ("Short SL", from_entry = "Short",
+             stop    = shortSL,
+             comment = "Short SL Hit")
+        // Webhook alert fires once per bar close on confirmed sell signal
+        alert(getAlertMessage("sell"), alert.freq_once_per_bar_close)
+
+// Close alert on direction change (covers SL exits not caught above)
+if trend != trend[1] and not buySignal and not sellSignal
+    alert(getAlertMessage("close"), alert.freq_once_per_bar_close)
+
+// ─── PLOTS ───────────────────────────────────────────────────────────────────
+upPlot = plot(trend ==  1 ? finalUp : na,
+     title     = "Up Trend",
+     style     = plot.style_linebr,
+     linewidth  = 2,
+     color     = color.green)
+
+dnPlot = plot(trend == -1 ? finalDn : na,
+     title     = "Down Trend",
+     style     = plot.style_linebr,
+     linewidth  = 2,
+     color     = color.red)
+
+// Stop loss levels exposed as plot_00 / plot_01 for webhook interpolation
+plot(longSL,  title = "Long SL Level",  display = display.none)   // plot_00
+plot(shortSL, title = "Short SL Level", display = display.none)   // plot_01
+
+// ─── SIGNAL SHAPES ───────────────────────────────────────────────────────────
+plotshape(buySignal ? finalUp : na,
+     title    = "UpTrend Begins",
+     location = location.absolute,
+     style    = shape.circle,
+     size     = size.tiny,
+     color    = color.green)
+
+plotshape(buySignal and showSignals ? finalUp : na,
+     title     = "Buy",
+     text      = "Buy",
+     location  = location.absolute,
+     style     = shape.labelup,
+     size      = size.tiny,
+     color     = color.green,
+     textcolor = color.white)
+
+plotshape(sellSignal ? finalDn : na,
+     title    = "DownTrend Begins",
+     location = location.absolute,
+     style    = shape.circle,
+     size     = size.tiny,
+     color    = color.red)
+
+plotshape(sellSignal and showSignals ? finalDn : na,
+     title     = "Sell",
+     text      = "Sell",
+     location  = location.absolute,
+     style     = shape.labeldown,
+     size      = size.tiny,
+     color     = color.red,
+     textcolor = color.white)
+
+// ─── HIGHLIGHTER FILL ────────────────────────────────────────────────────────
+mPlot        = plot(ohlc4, title = "", style = plot.style_circles, linewidth = 1, display = display.none)
+longFillCol  = highlighting ? (trend ==  1 ? color.new(color.green, 90) : color.white) : color.white
+shortFillCol = highlighting ? (trend == -1 ? color.new(color.red,   90) : color.white) : color.white
+fill(mPlot, upPlot, title = "UpTrend Highlighter",  color = longFillCol)
+fill(mPlot, dnPlot, title = "DownTrend Highlighter", color = shortFillCol)
+
+// ─── NOTES ───────────────────────────────────────────────────────────────────
+// ALERT SETUP (required after adding script to chart):
+//   1. Click the "Alert" button (clock icon) in TradingView toolbar
+//   2. Set Condition → this script name
+//   3. Set "Any alert() function call" as the trigger
+//   4. Under Notifications → paste your Webhook URL
+//   5. Save — alerts will now fire on each confirmed signal bar close
+//
+// WHY alertcondition() was removed:
+//   alertcondition() is incompatible with strategy() scripts in Pine Script.
+//   It compiles without error but silently never fires any alert.
+//   The correct approach for strategies is alert() inside execution blocks.
