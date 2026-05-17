@@ -68,6 +68,52 @@ if (!$skipProcessing) {
     ];
 }
 
+// Audit logging to Supabase webhook_audit_log table
+function logAuditToSupabase($requestMethod, $requestUri, $requestHeaders, $requestBody, $responseStatus, $responseBody) {
+    $supabaseUrl = getenv('SUPABASE_URL');
+    $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!$supabaseUrl || !$supabaseKey) {
+        error_log('Supabase credentials not set. Skipping audit log.');
+        return false;
+    }
+    
+    $url = $supabaseUrl . '/rest/v1/webhook_audit_log';
+    $auditData = json_encode([
+        'request_method' => $requestMethod,
+        'request_path' => $requestUri,
+        'request_headers' => $requestHeaders,
+        'request_body' => $requestBody,
+        'response_status' => $responseStatus,
+        'response_body' => is_array($responseBody) ? json_encode($responseBody) : $responseBody
+    ]);
+    
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $auditData);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'apikey: ' . $supabaseKey,
+        'Authorization: Bearer ' . $supabaseKey,
+        'Content-Type: application/json',
+        'Prefer: return=representation'
+    ]);
+    
+    $result = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    if (curl_errno($ch)) {
+        error_log('Supabase audit logging failed: ' . curl_error($ch));
+        curl_close($ch);
+        return false;
+    }
+    
+    curl_close($ch);
+    
+    // Success if we get 201 Created
+    return $httpCode === 201;
+}
+
 // Store webhook data in Supabase tradingview_webhooks table
 function storeWebhookInSupabase($data) {
     $supabaseUrl = getenv('SUPABASE_URL');
@@ -137,6 +183,9 @@ function storeWebhookInSupabase($data) {
 if ($data !== null && !$skipProcessing) {
     storeWebhookInSupabase($data);
 }
+
+// Always log audit trail (regardless of webhook validity)
+logAuditToSupabase($requestMethod, $requestUri, $requestHeaders, $requestBody, $responseStatus, $responseBody);
 
 // Output response
 http_response_code($responseStatus);
